@@ -25,7 +25,7 @@ Ushbu repozitoriyani yuklab oling yoki klonlang:
 
 Bash
 
-git clone https://github.com/username/project-name.git
+git clone https://github.com/Abdullo200604/3d-MediaPipe.git
 index.html faylini brauzerda oching.
 
 Eslatma: Brauzer kameraga va mikrofonga ruxsat so'raydi. Ruxsat berish tugmasini bosing.
