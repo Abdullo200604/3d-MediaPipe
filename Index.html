@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio & Hand Reactive 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #video-container {
+            position: absolute; bottom: 20px; right: 20px;
+            width: 150px; height: 110px;
+            border: 2px solid #00ffcc; border-radius: 10px;
+            z-index: 100; transform: scaleX(-1);
+        }
+        video { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+        #info {
+            position: absolute; top: 10px; left: 10px; color: white;
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px;
+            z-index: 100; border-left: 5px solid #00ffcc;
+        }
+        .gesture-hint { font-size: 12px; color: #aaa; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="info">
+        <b>Holat:</b> <span id="status">Kamerani kuting...</span><br>
+        <b>Audio:</b> <span id="audio-level">0%</span>
+        <div class="gesture-hint">
+            ✋ Ochiq qo'l = Yurak <br>
+            ✊ Musht = Mushak (Firework) <br>
+            ☝️ Ko'rsatkich barmog'i = Saturn <br>
+            ✌️ "Peace" belgisi = Gul
+        </div>
+    </div>
+
+    <div id="video-container">
+        <video id="input_video" playsinline></video>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const statusEl = document.getElementById('status');
+        const audioEl = document.getElementById('audio-level');
+
+        let scene, camera, renderer, particles, geometry;
+        let audioContext, analyser, dataArray;
+        let particleCount = 8000;
+        let targetPositions = new Float32Array(particleCount * 3);
+        let currentShape = 'heart';
+        let handX = 0, handY = 0;
+
+        // 1. Audio Sozlash
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+            } catch (e) { console.log("Mikrofon rad etildi"); }
+        }
+
+        // 2. Three.js Sahnasini yaratish
+        function initThree() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 25;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i*3] = (Math.random() - 0.5) * 50;
+                colors[i*3] = Math.random();
+                colors[i*3+1] = Math.random();
+                colors[i*3+2] = 1.0;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            particles = new THREE.Points(geometry, new THREE.PointsMaterial({
+                size: 0.1, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true
+            }));
+            scene.add(particles);
+            changeShape('heart');
+        }
+
+        // 3. Shakllar Generatorlari
+        function changeShape(shape) {
+            currentShape = shape;
+            for (let i = 0; i < particleCount; i++) {
+                let x, y, z = 0;
+                const t = (i / particleCount) * Math.PI * 2;
+
+                if (shape === 'heart') {
+                    x = 16 * Math.pow(Math.sin(t), 3) * 0.5;
+                    y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)) * 0.5;
+                } else if (shape === 'firework') {
+                    const r = Math.random() * 15;
+                    const angle = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    x = r * Math.sin(phi) * Math.cos(angle);
+                    y = r * Math.sin(phi) * Math.sin(angle);
+                    z = r * Math.cos(phi);
+                } else if (shape === 'saturn') {
+                    if (i < particleCount * 0.3) { // Sayyora
+                        const r = 4;
+                        const a = Math.random() * Math.PI * 2;
+                        const b = Math.acos(2 * Math.random() - 1);
+                        x = r * Math.sin(b) * Math.cos(a);
+                        y = r * Math.sin(b) * Math.sin(a);
+                        z = r * Math.cos(b);
+                    } else { // Halqa
+                        const r = 7 + Math.random() * 3;
+                        x = r * Math.cos(t * 10);
+                        y = r * Math.sin(t * 10) * 0.2;
+                        z = Math.random() * 0.5;
+                    }
+                } else if (shape === 'flower') {
+                    const r = 8 * Math.sin(t * 5);
+                    x = r * Math.cos(t);
+                    y = r * Math.sin(t);
+                }
+                targetPositions[i*3] = x;
+                targetPositions[i*3+1] = y;
+                targetPositions[i*3+2] = z;
+            }
+        }
+
+        // 4. MediaPipe Hands Sozlamalari
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                statusEl.innerText = "Qo'l topildi ✅";
+                const lm = results.multiHandLandmarks[0];
+                
+                handX = (0.5 - lm[9].x) * 40;
+                handY = (0.5 - lm[9].y) * 30;
+
+                // Jestlarni aniqlash
+                const isIndexUp = lm[8].y < lm[6].y;
+                const isMiddleUp = lm[12].y < lm[10].y;
+                const isRingUp = lm[16].y < lm[14].y;
+
+                if (isIndexUp && isMiddleUp && isRingUp) {
+                    if (currentShape !== 'heart') changeShape('heart');
+                } else if (!isIndexUp && !isMiddleUp) {
+                    if (currentShape !== 'firework') changeShape('firework');
+                } else if (isIndexUp && !isMiddleUp) {
+                    if (currentShape !== 'saturn') changeShape('saturn');
+                } else if (isIndexUp && isMiddleUp && !isRingUp) {
+                    if (currentShape !== 'flower') changeShape('flower');
+                }
+            } else {
+                statusEl.innerText = "Qo'lingizni ko'rsating...";
+            }
+        });
+
+        const cam = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({ image: videoElement }); },
+            width: 640, height: 480
+        });
+        cam.start();
+
+        // 5. Animatsiya va Audio Reaksiya
+        function animate() {
+            requestAnimationFrame(animate);
+
+            let audioScale = 0;
+            if (analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
+                audioScale = sum / dataArray.length / 50; // Sezgirlik
+                audioEl.innerText = Math.round(audioScale * 10) + "%";
+            }
+
+            const pos = geometry.attributes.position.array;
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                // Shaklga intilish + Audio tebranish
+                pos[i3] += (targetPositions[i3] + handX - pos[i3]) * 0.1 + (Math.random()-0.5) * audioScale;
+                pos[i3+1] += (targetPositions[i3+1] + handY - pos[i3+1]) * 0.1 + (Math.random()-0.5) * audioScale;
+                pos[i3+2] += (targetPositions[i3+2] - pos[i3+2]) * 0.1;
+            }
+            
+            geometry.attributes.position.needsUpdate = true;
+            particles.rotation.y += 0.005;
+            renderer.render(scene, camera);
+        }
+
+        // Ishga tushirish
+        initThree();
+        initAudio();
+        animate();
+
+        window.addEventListener('mousedown', () => {
+            if (audioContext) audioContext.resume();
+        });
+    </script>
+</body>
+</html>
